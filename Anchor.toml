@@ -1,17 +1,17 @@
 [toolchain]
 
 [features]
-seeds = false
+resolution = true
 skip-lint = false
 
 [programs.localnet]
-zkonnect = "88LidtjybtQPt1NLnqBgUFwDbLGY5WK1ZYbKQPwPK7zf"
+zkonnect = "E8kA7XjYkKYbXVFm8BWr3NEpSZMKrotQhpf32YLg3mQ6"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Devnet"
+cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
