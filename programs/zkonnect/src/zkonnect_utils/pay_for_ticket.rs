@@ -46,11 +46,16 @@ impl<'info> PayForTicket<'info> {
     pub fn buy_ticket(&mut self) -> Result<()> {
         require!(self.event.pay_sol > 0, MyError::PayOnlySol);
 
+        // Check if the event is sold out
+        require!(self.event.total_tickets > 0, MyError::SoldOut);
+
         transfer_checked(
             self.into_deposit_context(),
             self.event.ticket_price,
             self.mint.decimals,
         )?;
+
+        self.event.total_tickets -= 1;
 
         Ok(())
     }
