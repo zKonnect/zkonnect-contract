@@ -9,7 +9,7 @@ pub use states::*;
 pub mod zkonnect_utils;
 pub use zkonnect_utils::*;
 
-declare_id!("D57msu1skRML54zj1pfZ2fzewCx9UPveeT29hys94jrk");
+declare_id!("88LidtjybtQPt1NLnqBgUFwDbLGY5WK1ZYbKQPwPK7zf");
 
 #[program]
 pub mod zkonnect {
@@ -19,12 +19,8 @@ pub mod zkonnect {
     pub fn create_event(
         ctx: Context<CreateEvent>,
         event_name: String,
-        creator_name: String,
-        creator_domain: String,
         event_description: String,
         banner: String,
-        date_time: u64,
-        location: String,
         nfturi: String,
         ticket_price: u64,
         total_tickets: u8,
@@ -33,12 +29,8 @@ pub mod zkonnect {
         ctx.accounts.create_event(
             &ctx.bumps,
             event_name,
-            creator_name,
-            creator_domain,
             event_description,
             banner,
-            date_time,
-            location,
             nfturi,
             ticket_price,
             total_tickets,
@@ -71,12 +63,6 @@ pub mod zkonnect {
         for byte in data.deref_mut().iter_mut() {
             *byte = 0;
         }
-
-        // let dst: &mut [u8] = &mut data;
-        // let mut cursor = std::io::Cursor::new(dst);
-        // cursor
-        //     .write_all(&anchor_lang::__private::CLOSED_ACCOUNT_DISCRIMINATOR)
-        //     .unwrap();
 
         Ok(())
     }

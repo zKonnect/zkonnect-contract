@@ -22,11 +22,6 @@ impl<'info> PaySolForTicket<'info> {
     pub fn buy_ticket(&mut self) -> Result<()> {
         require!(self.event.pay_sol == 0, MyError::PaySolNotEnabled);
 
-        require!(
-            self.event.tickets_sold < self.event.total_tickets,
-            MyError::TicketSoldOut
-        );
-
         // Create the transfer instruction
         let transfer_instruction = system_instruction::transfer(
             self.from.key,
@@ -42,8 +37,6 @@ impl<'info> PaySolForTicket<'info> {
                 self.system_program.to_account_info(),
             ],
         )?;
-
-        self.event.tickets_sold += 1;
 
         Ok(())
     }

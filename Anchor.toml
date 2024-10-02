@@ -1,11 +1,11 @@
 [toolchain]
 
 [features]
-resolution = true
+seeds = false
 skip-lint = false
 
 [programs.localnet]
-zkonnect = "D57msu1skRML54zj1pfZ2fzewCx9UPveeT29hys94jrk"
+zkonnect = "88LidtjybtQPt1NLnqBgUFwDbLGY5WK1ZYbKQPwPK7zf"
 
 [registry]
 url = "https://api.apr.dev"
