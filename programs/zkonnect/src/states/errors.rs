@@ -6,4 +6,6 @@ pub enum MyError {
     PaySolNotEnabled,
     #[msg("Only SOL is accepted")]
     PayOnlySol,
+    #[msg("All Tickets Sold out")]
+    SoldOut,
 }
