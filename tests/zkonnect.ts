@@ -1,74 +1,299 @@
 import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
+import { Program, BN } from "@coral-xyz/anchor";
 import { Zkonnect } from "../target/types/zkonnect";
-import { randomBytes } from "crypto";
+import NodeWallet from "@coral-xyz/anchor/dist/cjs/nodewallet";
+import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import {
+  TOKEN_2022_PROGRAM_ID,
+  createMint,
+  mintTo,
+  getOrCreateAssociatedTokenAccount,
+} from "@solana/spl-token";
 
 // Import the assertion library
 import { assert } from "chai";
 import { TOKEN_PROGRAM_ID } from "@coral-xyz/anchor/dist/cjs/utils/token";
+import { utf8 } from "@coral-xyz/anchor/dist/cjs/utils/bytes";
 
 describe("zkonnect", () => {
   // Configure the client to use the local cluster.
-  const provider = anchor.AnchorProvider.local();
+  const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
   const program = anchor.workspace.zkonnect as Program<Zkonnect>;
 
-  it('Creates an event', async () => {
-    // Generate a new keypair for the event
-    const eventKeypair = anchor.web3.Keypair.generate();
+  const isToken2022 = async (mint: PublicKey) => {
+    const mintInfo = await provider.connection.getAccountInfo(mint);
+    return mintInfo?.owner.equals(TOKEN_2022_PROGRAM_ID);
+  };
 
-    // Define the parameters for the create_event function
-    const seed = new anchor.BN(randomBytes(8));
-    const creatorName = "Test Creator";
-    const creatorDomain = "test.domain";
-    const eventName = "Test Event";
-    const banner = "Test Banner";
-    const dateTime = new anchor.BN(Math.floor(Date.now() / 1000));
-    const location = "Test Location";
-    const ticketPrice = new anchor.BN(1);
-    const totalTickets = new anchor.BN(100);
+  const getCreatorInfo = async (eventId: PublicKey) => {
+    if (!program) {
+      throw new Error("Program not initialized");
+    }
+    return program.account.event.fetch(eventId);
+  };
 
-    // Derive the PDA for the event account
-    const [eventPDA, bump] = await anchor.web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("zkonnect"), provider.wallet.publicKey.toBuffer(), seed.toArrayLike(Buffer, 'le', 8)],
-        program.programId
+  const wallet = provider.wallet as NodeWallet;
+
+  const creator = anchor.web3.Keypair.generate();
+  const buyer = anchor.web3.Keypair.generate();
+
+  let merkleTree = anchor.web3.Keypair.generate().publicKey;
+  let collection: anchor.web3.PublicKey;
+  let mint: anchor.web3.PublicKey;
+  let creatorAta: anchor.web3.PublicKey;
+  let buyerAta: anchor.web3.PublicKey;
+  let solProfilePda: PublicKey;
+  let tokenProfilePda: PublicKey;
+
+  it("Airdrop Sol to maker and taker", async () => {
+    const tx = await provider.connection.requestAirdrop(
+      creator.publicKey,
+      (10000 * LAMPORTS_PER_SOL)
+    );
+    await provider.connection.confirmTransaction(tx);
+
+    const tx2 = await provider.connection.requestAirdrop(
+      buyer.publicKey,
+      (10000 * LAMPORTS_PER_SOL)
+    );
+    await provider.connection.confirmTransaction(tx2);
+  });
+
+  it("Create tokens and Mint Tokens", async () => {
+    mint = await createMint(
+      provider.connection as any,
+      wallet.payer,
+      provider.publicKey,
+      provider.publicKey,
+      6
     );
 
-    // Call the create_event function
-    // await program.methods
-    //     .createEvent(
-    //       seed,
-    //       "manice18",
-    //       "CTO",
-    //       "Cholo",
-    //       "bye",
-    //       new anchor.BN(Date.now()),
-    //       "hi",
-    //       new anchor.BN(1),
-    //       new anchor.BN(100),
-    //     )
-    //     .accountsPartial({
-    //       creator: provider.wallet.publicKey,
-    //       mint: new anchor.web3.PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"),
-    //       tokenProgram: TOKEN_PROGRAM_ID,
-    //       event: eventPDA,
-    //     })
-    //     .rpc();
+    creatorAta = (
+      await getOrCreateAssociatedTokenAccount(
+        provider.connection as any,
+        wallet.payer,
+        mint,
+        creator.publicKey
+      )
+    ).address;
 
-    // Fetch the event account and assert the values
-    const eventAccount = await program.account.event.all();
+    buyerAta = (
+      await getOrCreateAssociatedTokenAccount(
+        provider.connection as any,
+        wallet.payer,
+        mint,
+        buyer.publicKey
+      )
+    ).address;
 
-    console.log("Event Account:", eventAccount);
+    const mintAmount = 10 * 10 ** 6;
 
-    // Add assertions to verify the event account values
-    // assert.equal(eventAccount[0].creatorName, creatorName);
-    // assert.equal(eventAccount.creatorDomain, creatorDomain);
-    // assert.equal(eventAccount.name, eventName);
-    // assert.equal(eventAccount.banner, banner);
-    // assert.ok(eventAccount.dateTime.eq(dateTime));
-    // assert.equal(eventAccount.location, location);
-    // assert.ok(eventAccount.ticketPrice.eq(ticketPrice));
-    // assert.equal(eventAccount.totalTickets, totalTickets);
-});
+    await mintTo(
+      provider.connection as any,
+      wallet.payer,
+      mint,
+      buyerAta,
+      wallet.payer,
+      mintAmount
+    );
+
+    const buyerBalance = await provider.connection.getTokenAccountBalance(
+      buyerAta
+    );
+
+    assert.ok(buyerBalance.value.uiAmount === mintAmount / 10 ** 6);
+  });
+
+  it("Create a new Collection", async () => {
+    collection = await createMint(
+      provider.connection as any,
+      wallet.payer,
+      provider.publicKey,
+      provider.publicKey,
+      6
+    );
+  });
+
+  it("Create a New Sol Event", async () => {
+    const tokenProgram = (await isToken2022(mint))
+      ? TOKEN_2022_PROGRAM_ID
+      : TOKEN_PROGRAM_ID;
+
+    await program.methods
+      .createEvent(
+        "Event 1",
+        "Event 1 Description",
+        "banner.jpg",
+        "nfturi",
+        new BN(100),
+        100,
+        0
+      )
+      .accounts({
+        creator: creator.publicKey,
+        mint: mint,
+        tokenProgram: tokenProgram,
+        merkleTree: merkleTree,
+        collectionNft: collection,
+      })
+      .signers([creator])
+      .rpc();
+  });
+
+  it("Create a New Token Event", async () => {
+    const tokenProgram = (await isToken2022(mint))
+      ? TOKEN_2022_PROGRAM_ID
+      : TOKEN_PROGRAM_ID;
+
+    await program.methods
+      .createEvent(
+        "Event 2",
+        "Event 2 Description",
+        "banner.jpg",
+        "nfturi",
+        new BN(100),
+        100,
+        1
+      )
+      .accounts({
+        creator: creator.publicKey,
+        mint: mint,
+        tokenProgram: tokenProgram,
+        merkleTree: merkleTree,
+        collectionNft: collection,
+      })
+      .signers([creator])
+      .rpc();
+  });
+
+  it("Search for Event", async () => {
+
+    [solProfilePda] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("zkonnect"),
+        creator.publicKey.toBuffer(),
+        Buffer.from(utf8.encode("Event 1")),
+      ],
+      program.programId,
+    );
+
+    [tokenProfilePda] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("zkonnect"),
+        creator.publicKey.toBuffer(),
+        Buffer.from(utf8.encode("Event 2")),
+      ],
+      program.programId,
+    );
+
+    const createdSolEvent = await getCreatorInfo(solProfilePda);
+
+    assert.ok(createdSolEvent.eventName === "Event 1");
+    assert.ok(createdSolEvent.eventDescription === "Event 1 Description");
+    assert.ok(createdSolEvent.banner === "banner.jpg");
+    assert.ok(createdSolEvent.nfturi === "nfturi");
+    assert.ok(createdSolEvent.ticketPrice.eq(new BN(100)));
+    assert.ok(createdSolEvent.totalTickets === 100);
+    assert.ok(createdSolEvent.paySol === 0);
+
+    const createdTokenEvent = await getCreatorInfo(tokenProfilePda);
+    assert.ok(createdTokenEvent.eventName === "Event 2");
+    assert.ok(createdTokenEvent.eventDescription === "Event 2 Description");
+    assert.ok(createdTokenEvent.banner === "banner.jpg");
+    assert.ok(createdTokenEvent.nfturi === "nfturi");
+    assert.ok(createdTokenEvent.ticketPrice.eq(new BN(100)));
+    assert.ok(createdTokenEvent.totalTickets === 100);
+    assert.ok(createdTokenEvent.paySol === 1);
+  });
+
+  it("Buy Ticket With Sol For SolEvent", async () => {
+
+    // Check ticket count before buying
+    const ticketCountBefore = await getCreatorInfo(solProfilePda);
+    assert.ok(ticketCountBefore.totalTickets === 100);
+
+    await program.methods
+      .paySolForTicket()
+      .accountsPartial({
+        from: buyer.publicKey,
+        to: creator.publicKey,
+        event: solProfilePda,
+      })
+      .signers([buyer])
+      .rpc();
+
+    // Check ticket count after buying
+    const ticketCountAfter = await getCreatorInfo(solProfilePda);
+    assert.ok(ticketCountAfter.totalTickets === 99);
+  });
+
+  it("Cannot Buy Ticket With Token For SolEvent", async () => {
+    const tokenProgram = (await isToken2022(mint))
+      ? TOKEN_2022_PROGRAM_ID
+      : TOKEN_PROGRAM_ID;
+    try {
+      await program.methods
+        .payForTicket()
+        .accountsPartial({
+          from: buyer.publicKey,
+          to: creator.publicKey,
+          event: solProfilePda,
+          tokenProgram,
+          fromAta: buyerAta,
+          toAta: creatorAta,
+          mint: mint,
+        })
+        .signers([buyer])
+        .rpc();
+    } catch (error) {
+      assert.ok(error.toString().includes("Error Message: Only SOL is accepted"));
+    }
+  });
+
+  it("Buy Ticket With Token For TokenEvent", async () => {
+    const tokenProgram = (await isToken2022(mint))
+      ? TOKEN_2022_PROGRAM_ID
+      : TOKEN_PROGRAM_ID;
+
+    // Check ticket count before buying
+    const ticketCountBefore = await getCreatorInfo(tokenProfilePda);
+    assert.ok(ticketCountBefore.totalTickets === 100);
+
+    await program.methods
+      .payForTicket()
+      .accountsPartial({
+        from: buyer.publicKey,
+        to: creator.publicKey,
+        event: tokenProfilePda,
+        tokenProgram,
+        fromAta: buyerAta,
+        toAta: creatorAta,
+        mint: mint,
+      })
+      .signers([buyer])
+      .rpc();
+
+    // Check ticket count after buying
+    const ticketCountAfter = await getCreatorInfo(tokenProfilePda);
+    assert.ok(ticketCountAfter.totalTickets === 99);
+  });
+
+  it("Cannot Buy Ticket With Sol For TokenEvent", async () => {
+    try {
+      await program.methods
+        .paySolForTicket()
+        .accountsPartial({
+          from: buyer.publicKey,
+          to: creator.publicKey,
+          event: tokenProfilePda,
+        })
+        .signers([buyer])
+        .rpc();
+    } catch (error) {
+      assert.ok(error.toString().includes("Error Message: Pay Sol not enabled"));
+    }
+  });
+  
 });
